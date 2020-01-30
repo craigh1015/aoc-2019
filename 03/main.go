@@ -2,15 +2,35 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"log"
 	"math"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
+
+	"runtime/pprof"
 )
 
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
+var memprofile = flag.String("memprofile", "", "write memory profile to `file`")
+
 func main() {
+	flag.Parse()
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
+
 	f, err := os.Open("input.txt")
 	if err != nil {
 		log.Fatal(err)
@@ -23,8 +43,20 @@ func main() {
 	s.Scan()
 	pathString2 := s.Text()
 
-	fmt.Printf("Min near crossing = %d", getCrossDistanceNear(pathString1, pathString2))
-	fmt.Printf("Min path crossing = %d", getCrossDistancePath(pathString1, pathString2))
+	fmt.Printf("Min near crossing = %d\n", getCrossDistanceNear(pathString1, pathString2))
+	fmt.Printf("Min path crossing = %d\n", getCrossDistancePath(pathString1, pathString2))
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+		defer f.Close()
+		runtime.GC() // get up-to-date statistics
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatal("could not write memory profile: ", err)
+		}
+	}
 }
 
 func run(program string, noun int, verb int) []string {
@@ -43,15 +75,43 @@ type wirePath struct {
 	pos      coord
 	distance int
 	coords   []coord
+	seen     map[string]coord
 }
 
 func (w *wirePath) contains(pos coord) coord {
-	for _, coord := range w.coords {
-		if coord.equal(pos) {
-			return coord
-		}
+	key := strconv.Itoa(pos.x) + ":" + strconv.Itoa(pos.y)
+	c, found := w.seen[key]
+	if found {
+		return c
 	}
 	return coord{}
+}
+
+func (w *wirePath) add(step string) {
+	direction := step[0]
+	length, err := strconv.Atoi(step[1:])
+	if err != nil {
+		log.Fatalf("error parsing %s", step)
+	}
+
+	for i := 0; i < length; i++ {
+		w.distance++
+
+		switch direction {
+		case 'R':
+			w.pos = coord{x: w.pos.x + 1, y: w.pos.y, d: w.distance}
+		case 'L':
+			w.pos = coord{x: w.pos.x - 1, y: w.pos.y, d: w.distance}
+		case 'U':
+			w.pos = coord{x: w.pos.x, y: w.pos.y + 1, d: w.distance}
+		case 'D':
+			w.pos = coord{x: w.pos.x, y: w.pos.y - 1, d: w.distance}
+		}
+
+		w.coords = append(w.coords, w.pos)
+		key := strconv.Itoa(w.pos.x) + ":" + strconv.Itoa(w.pos.y)
+		w.seen[key] = w.pos
+	}
 }
 
 func getCrossDistancePath(pathString1, pathString2 string) int {
@@ -106,40 +166,10 @@ func getCrossings(pathString1, pathString2 string) []coord {
 }
 
 func makePath(pathString string) wirePath {
-	path := wirePath{coord{0, 0, 0}, 0, nil}
+	path := wirePath{coord{0, 0, 0}, 0, nil, map[string]coord{}}
 	steps := strings.Split(pathString, ",")
 	for _, step := range steps {
-		direction := step[0]
-		length, err := strconv.Atoi(step[1:])
-		if err != nil {
-			log.Fatalf("error parsing %s", step)
-		}
-		switch direction {
-		case 'R':
-			for i := 0; i < length; i++ {
-				path.distance += 1
-				path.pos = coord{x: path.pos.x + 1, y: path.pos.y, d: path.distance}
-				path.coords = append(path.coords, path.pos)
-			}
-		case 'L':
-			for i := 0; i < length; i++ {
-				path.distance += 1
-				path.pos = coord{x: path.pos.x - 1, y: path.pos.y, d: path.distance}
-				path.coords = append(path.coords, path.pos)
-			}
-		case 'U':
-			for i := 0; i < length; i++ {
-				path.distance += 1
-				path.pos = coord{x: path.pos.x, y: path.pos.y + 1, d: path.distance}
-				path.coords = append(path.coords, path.pos)
-			}
-		case 'D':
-			for i := 0; i < length; i++ {
-				path.distance += 1
-				path.pos = coord{x: path.pos.x, y: path.pos.y - 1, d: path.distance}
-				path.coords = append(path.coords, path.pos)
-			}
-		}
+		path.add(step)
 	}
 	return path
 }
