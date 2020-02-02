@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -14,18 +15,10 @@ func main() {
 		log.Fatal(err)
 	}
 
-	for noun := 0; noun <= 99; noun++ {
-		for verb := 0; verb <= 99; verb++ {
-			result := run(string(program), noun, verb)
-			fmt.Printf("noun: %d, verb: %d -> %d\n", noun, verb, result[0])
-			if result[0] == 19690720 {
-				return
-			}
-		}
-	}
+	run(string(program), 5)
 }
 
-func run(program string, noun int, verb int) []int {
+func run(program string, input int) ([]int, int) {
 	tokens := strings.Split(program, ",")
 	codes := make([]int, len(tokens))
 	for i, token := range tokens {
@@ -35,8 +28,7 @@ func run(program string, noun int, verb int) []int {
 		}
 		codes[i] = code
 	}
-	codes[1] = noun
-	codes[2] = verb
+	output := 0
 	pc := 0
 	for {
 		op, modes := decomposeCommand(codes[pc])
@@ -44,26 +36,106 @@ func run(program string, noun int, verb int) []int {
 			break
 		}
 
-		_ = modes
-
-		// reg1, err := read(tokens, modes, pc, 1)
-
-		reg1 := readRelative(codes, pc+1)
-		reg2 := readRelative(codes, pc+2)
-		reg3 := readPosition(codes, pc+3)
-
 		if op == 1 {
+			registers := 3
+			reg1 := read(codes, modes, pc, 1)
+			reg2 := read(codes, modes, pc, 2)
+			reg3 := read(codes, 100, pc, 3)
 			codes[reg3] = reg1 + reg2
-			pc += 4
+			// fmt.Printf("%v - pc: %d, modes: %d, reg: %v, reg3: %d\n", codes[pc:pc+registers+1], pc, modes, []int{reg1, reg2, reg3}, codes[reg3])
+			pc += registers + 1
+			continue
 		}
 
 		if op == 2 {
+			registers := 3
+			reg1 := read(codes, modes, pc, 1)
+			reg2 := read(codes, modes, pc, 2)
+			reg3 := read(codes, 100, pc, 3)
 			codes[reg3] = reg1 * reg2
-			pc += 4
+			// fmt.Printf("%v - pc: %d, modes: %d, reg: %v, reg3: %d\n", codes[pc:pc+registers+1], pc, modes, []int{reg1, reg2, reg3}, codes[reg3])
+			pc += registers + 1
+			continue
 		}
-		// fmt.Printf("pc:%d op:%s tokens:%v\n", pc, op, tokens)
+
+		if op == 3 {
+			registers := 1
+			reg1 := read(codes, 1, pc, 1)
+			codes[reg1] = input
+			// fmt.Printf("%v - pc: %d, modes: %d, reg: %v, input: %d, reg1: %d\n", codes[pc:pc+registers+1], pc, modes, []int{reg1}, input, codes[reg1])
+			pc += registers + 1
+			continue
+		}
+
+		if op == 4 {
+			registers := 1
+			reg1 := read(codes, modes, pc, 1)
+			// fmt.Printf("%v - pc: %d, modes: %d, reg: %v\n", codes[pc:pc+registers+1], pc, modes, []int{reg1})
+			output = reg1
+			fmt.Printf("pc: %d - output: %d\n", pc, output)
+			pc += registers + 1
+			continue
+		}
+
+		if op == 5 {
+			registers := 2
+			reg1 := read(codes, modes, pc, 1)
+			reg2 := read(codes, modes, pc, 2)
+			// fmt.Printf("%v - pc: %d, modes: %d, reg: %v, reg3: %d\n", codes[pc:pc+registers+1], pc, modes, []int{reg1, reg2, reg3}, codes[reg3])
+			if reg1 != 0 {
+				pc = reg2
+			} else {
+				pc += registers + 1
+			}
+			continue
+		}
+
+		if op == 6 {
+			registers := 2
+			reg1 := read(codes, modes, pc, 1)
+			reg2 := read(codes, modes, pc, 2)
+			// fmt.Printf("%v - pc: %d, modes: %d, reg: %v, reg3: %d\n", codes[pc:pc+registers+1], pc, modes, []int{reg1, reg2, reg3}, codes[reg3])
+			if reg1 == 0 {
+				pc = reg2
+			} else {
+				pc += registers + 1
+			}
+			continue
+		}
+
+		if op == 7 {
+			registers := 3
+			reg1 := read(codes, modes, pc, 1)
+			reg2 := read(codes, modes, pc, 2)
+			reg3 := read(codes, 100, pc, 3)
+			if reg1 < reg2 {
+				codes[reg3] = 1
+			} else {
+				codes[reg3] = 0
+			}
+			// fmt.Printf("%v - pc: %d, modes: %d, reg: %v, reg3: %d\n", codes[pc:pc+registers+1], pc, modes, []int{reg1, reg2, reg3}, codes[reg3])
+			pc += registers + 1
+			continue
+		}
+
+		if op == 8 {
+			registers := 3
+			reg1 := read(codes, modes, pc, 1)
+			reg2 := read(codes, modes, pc, 2)
+			reg3 := read(codes, 100, pc, 3)
+			if reg1 == reg2 {
+				codes[reg3] = 1
+			} else {
+				codes[reg3] = 0
+			}
+			// fmt.Printf("%v - pc: %d, modes: %d, reg: %v, reg3: %d\n", codes[pc:pc+registers+1], pc, modes, []int{reg1, reg2, reg3}, codes[reg3])
+			pc += registers + 1
+			continue
+		}
+
+		log.Fatalf("invalid opcode %d", op)
 	}
-	return codes
+	return codes, output
 }
 
 func decomposeCommand(command int) (int, int) {
@@ -73,13 +145,11 @@ func decomposeCommand(command int) (int, int) {
 }
 
 func read(codes []int, modes, pc, offset int) int {
-	return 0
-}
-
-func readPosition(codes []int, position int) int {
-	return codes[position]
-}
-
-func readRelative(codes []int, position int) int {
-	return codes[codes[position]]
+	div := int(math.Pow10(offset - 1))
+	mode := (modes / div) % 10
+	value := codes[pc+offset]
+	if mode == 0 {
+		return codes[value]
+	}
+	return value
 }
