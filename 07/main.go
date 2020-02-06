@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 func main() {
@@ -19,17 +20,37 @@ func main() {
 }
 
 func amplify(program string, input int, phases []int) int {
-	var output int
-	_, output = run(program, []int{phases[0], 0})
-	_, output = run(program, []int{phases[1], output})
-	_, output = run(program, []int{phases[2], output})
-	_, output = run(program, []int{phases[3], output})
-	_, output = run(program, []int{phases[4], output})
+	c1in := make(chan int, 1)
+	c2in := make(chan int, 1)
+	c3in := make(chan int, 1)
+	c4in := make(chan int, 1)
+	c5in := make(chan int, 1)
+
+	var wg sync.WaitGroup
+	wg.Add(5)
+
+	go run("amp-1", program, c1in, c2in, &wg)
+	go run("amp-2", program, c2in, c3in, &wg)
+	go run("amp-3", program, c3in, c4in, &wg)
+	go run("amp-4", program, c4in, c5in, &wg)
+	go run("amp-5", program, c5in, c1in, &wg)
+
+	c1in <- phases[0]
+	c2in <- phases[1]
+	c3in <- phases[2]
+	c4in <- phases[3]
+	c5in <- phases[4]
+
+	c1in <- input
+	wg.Wait()
+	output := <-c1in
+
 	return output
 }
 
 func runAmplifiers(program string) int {
-	phaseList := generatePhases([]int{0, 1, 2, 3, 4})
+	// phaseList := generatePhases([]int{0, 1, 2, 3, 4})
+	phaseList := generatePhases([]int{5, 6, 7, 8, 9})
 	maxOutput := 0
 	for _, phases := range phaseList {
 		output := amplify(program, 0, phases)
@@ -40,7 +61,8 @@ func runAmplifiers(program string) int {
 	return maxOutput
 }
 
-func run(program string, input []int) ([]int, int) {
+func run(name, program string, input <-chan int, output chan<- int, wg *sync.WaitGroup) {
+	defer wg.Done()
 	tokens := strings.Split(program, ",")
 	codes := make([]int, len(tokens))
 	for i, token := range tokens {
@@ -50,7 +72,7 @@ func run(program string, input []int) ([]int, int) {
 		}
 		codes[i] = code
 	}
-	ic, pc, output := 0, 0, 0
+	pc := 0
 	for {
 		op, modes := decomposeCommand(codes[pc])
 		if op == 99 {
@@ -82,8 +104,7 @@ func run(program string, input []int) ([]int, int) {
 		if op == 3 {
 			registers := 1
 			reg1 := read(codes, 1, pc, 1)
-			codes[reg1] = input[ic]
-			ic++
+			codes[reg1] = <-input
 			// fmt.Printf("%v - pc: %d, modes: %d, reg: %v, input: %d, reg1: %d\n", codes[pc:pc+registers+1], pc, modes, []int{reg1}, input, codes[reg1])
 			pc += registers + 1
 			continue
@@ -93,7 +114,7 @@ func run(program string, input []int) ([]int, int) {
 			registers := 1
 			reg1 := read(codes, modes, pc, 1)
 			// fmt.Printf("%v - pc: %d, modes: %d, reg: %v\n", codes[pc:pc+registers+1], pc, modes, []int{reg1})
-			output = reg1
+			output <- reg1
 			// fmt.Printf("pc: %d - output: %d\n", pc, output)
 			pc += registers + 1
 			continue
@@ -157,7 +178,6 @@ func run(program string, input []int) ([]int, int) {
 
 		log.Fatalf("invalid opcode %d", op)
 	}
-	return codes, output
 }
 
 func decomposeCommand(command int) (int, int) {
